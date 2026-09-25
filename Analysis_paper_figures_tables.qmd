@@ -44,17 +44,6 @@ set_gtsummary_theme(list(
     all_dichotomous() ~ c(0, 1)
   )
 ))
-
-# Wilson score 95% CI for a proportion (matches the method used for the
-# responder-rate confidence intervals reported in the manuscript).
-wilson_ci <- function(x, n, z = 1.96) {
-  if (n == 0) return(c(est = NA, lower = NA, upper = NA))
-  p <- x / n
-  denom <- 1 + z^2 / n
-  center <- (p + z^2 / (2 * n)) / denom
-  half <- (z * sqrt((p * (1 - p) / n) + (z^2 / (4 * n^2)))) / denom
-  c(est = p, lower = max(0, center - half), upper = min(1, center + half))
-}
 ```
 
 # Figure 1 - Flowchart
