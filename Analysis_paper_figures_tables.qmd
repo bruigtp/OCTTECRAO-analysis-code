@@ -1,0 +1,446 @@
+---
+title: "Optical Coherence Tomography for Thrombolysis Effectiveness in Central Retinal Artery Occlusion"
+subtitle: "Reproducible code for the manuscript's Table 1, Table 2, Figure 1 (flowchart) and Figures 2-4"
+date: today
+execute:
+  echo: false
+  warning: false
+  message: false
+format:
+  html:
+    output-file: "Analysis_paper_figures_tables.html"
+    embed-resources: true
+    toc: true
+    toc-depth: 3
+    theme: cosmo
+    highlight: tango
+    number-sections: true
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+library(here)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(stringr)
+library(forcats)
+library(ggplot2)
+library(gtsummary)
+library(gt)
+library(flowchart)
+library(labelled)
+
+data <- read.csv("paper/data.csv")
+
+labels <- get_variable_labels(data)
+
+set_gtsummary_theme(list(
+  "tbl_summary-arg:digits" = list(
+    all_continuous() ~ 1,
+    all_categorical() ~ c(0, 1),
+    all_dichotomous() ~ c(0, 1)
+  )
+))
+
+# Wilson score 95% CI for a proportion (matches the method used for the
+# responder-rate confidence intervals reported in the manuscript).
+wilson_ci <- function(x, n, z = 1.96) {
+  if (n == 0) return(c(est = NA, lower = NA, upper = NA))
+  p <- x / n
+  denom <- 1 + z^2 / n
+  center <- (p + z^2 / (2 * n)) / denom
+  half <- (z * sqrt((p * (1 - p) / n) + (z^2 / (4 * n^2)))) / denom
+  c(est = p, lower = max(0, center - half), upper = min(1, center + half))
+}
+```
+
+# Figure 1 - Flowchart
+
+```{r}
+#| label: fig-flowchart
+#| fig-width: 9
+#| fig-height: 9
+
+data |>
+  dplyr::mutate(agudesa_cat = as.factor(agudesa_cat)) |> 
+  as_fc(label = "Total patients", text_fs = 10) |>
+  fc_filter(
+    filter = !exc_nino & !exc_sintom & !exc_diag & !exc_rep & !exc_sint_urg & !is.na(tiempo_sint_urg_hour),
+    label = "Central retinal artery occlusion",
+    text_pattern = "{label}\n{n}",
+    text_fs = 10,
+    show_exc = TRUE,
+    label_exc = "Excluded",
+    just_exc = "left",
+    bg_fill_exc = "#ed6f88",
+    text_fs_exc = 7
+  ) |>
+  fc_split(agudesa_cat, text_fs = 10) |>
+  fc_split(tiv, text_fs = 10) |>
+  fc_draw()
+```
+
+```{r}
+#| label: dataframes-analisis
+
+data <- data |>
+  dplyr::filter(!exc_nino & !exc_sintom & !exc_diag & !exc_rep & !exc_sint_urg & !is.na(tiempo_sint_urg_hour)) |>
+  dplyr::mutate(
+    agudesa_cat = factor(agudesa_cat, levels = c("BCVA ≤ 20 letters", "BCVA > 20 letters")),
+    tiv = factor(tiv, levels = c("Fibrinolytic treatment", "No-fibrinolytic treatment"))
+  )
+```
+
+# Table 1 - Demographic baseline characteristics
+
+```{r}
+#| label: tbl-demographic
+#| tbl-cap: "Demographic baseline characteristics"
+
+xtab <- data |>
+  dplyr::select(
+    edat, sexe, hta, dm_1, dm_2, dislipemia, cardiopatia_isquemica,
+    fibrilacio_auricular, arteopatia_periferica, mpoc, insuficiencia_cardiaca,
+    valvulopaties, insuficiencia_renal_cronica, ictus_previs, dependencia_tabac,
+    agudesa_cat, tiv
+  )
+
+tab1 <- xtab |>
+  labelled::set_variable_labels(.labels = labels, .strict = FALSE) |>
+  gtsummary::tbl_summary(
+    include = -c(agudesa_cat, tiv),
+    value = list(-c(edat, sexe, dependencia_tabac) ~ "Yes"),
+    missing = "ifany",
+    type = all_continuous() ~ "continuous2",
+    statistic = all_continuous2() ~ c("{median} [{p25}; {p75}]", "{min}, {max}")
+  ) |>
+  gtsummary::modify_header(stat_0 ~ "N = {n}") |>
+  # gtsummary::modify_column_hide(n) |>
+  gtsummary::add_stat_label() |>
+  gtsummary::bold_labels()
+
+tab2 <- xtab |>
+  dplyr::filter(agudesa_cat == "BCVA ≤ 20 letters") |>
+  labelled::set_variable_labels(.labels = labels, .strict = FALSE) |>
+  gtsummary::tbl_summary(
+    include = -agudesa_cat,
+    value = list(-c(edat, sexe, dependencia_tabac) ~ "Yes"),
+    by = tiv,
+    missing = "ifany",
+    type = all_continuous() ~ "continuous2",
+    statistic = all_continuous2() ~ c("{median} [{p25}; {p75}]", "{min}, {max}")
+  ) |>
+  gtsummary::add_stat_label() |>
+  gtsummary::bold_labels()
+
+tab3 <- xtab |>
+  dplyr::filter(agudesa_cat == "BCVA > 20 letters") |>
+  dplyr::mutate(tiv = droplevels(tiv)) |>
+  labelled::set_variable_labels(.labels = labels, .strict = FALSE) |>
+  gtsummary::tbl_summary(
+    include = -agudesa_cat,
+    value = list(-c(edat, sexe, dependencia_tabac) ~ "Yes"),
+    by = tiv,
+    missing = "ifany",
+    type = all_continuous() ~ "continuous2",
+    statistic = all_continuous2() ~ c("{median} [{p25}; {p75}]", "{min}, {max}")
+  ) |>
+  gtsummary::add_stat_label() |>
+  gtsummary::bold_labels()
+
+gtsummary::tbl_merge(
+  tbls = list(tab1, tab2, tab3),
+  tab_spanner = c("**CRAO population**", str_glue("**{levels(xtab$agudesa_cat)}**"))
+)
+```
+
+# Table 2 - Procedural time intervals (Sub-cohort 1)
+
+```{r}
+#| label: tbl-time-key-events-treatment
+#| tbl-cap: "Times of different key events in the patients who received fibrinolytic treatment: intravenous / intra-arterial"
+
+xtab <- data |>
+  dplyr::filter(agudesa_cat == "BCVA ≤ 20 letters" & tiv == "Fibrinolytic treatment") |>
+  dplyr::select(tiempo_porta_agulla_min, tiempo_urg_tev_min, agudesa_cat, tiv) |>
+  dplyr::mutate(across(-c(agudesa_cat, tiv), ~ as.numeric(.x)))
+
+xtab |>
+  labelled::set_variable_labels(.labels = labels, .strict = FALSE) |>
+  gtsummary::tbl_summary(
+    include = -c(agudesa_cat, tiv),
+    missing = "ifany",
+    type = everything() ~ "continuous2",
+    statistic = all_continuous2() ~ c("{median} [{p25}; {p75}]", "{min}, {max}")
+  ) |>
+  gtsummary::modify_header(stat_0 ~ "**BCVA ≤20 letters and Fibrinolytic treatment**<br>N = {n}") |>
+  gtsummary::add_stat_label() |>
+  gtsummary::bold_labels()
+```
+
+# Effectiveness - responders by sub-cohort and time point
+
+```{r}
+#| label: tbl-effectiveness
+#| tbl-cap: "Proportion (number) of responders by sub-cohort and time point, with 95% Wilson confidence intervals"
+
+grp_of <- dplyr::case_when(
+  data$agudesa_cat == "BCVA ≤ 20 letters" & data$tiv == "Fibrinolytic treatment" ~ "Sub-cohort 1",
+  data$agudesa_cat == "BCVA ≤ 20 letters" & data$tiv == "No-fibrinolytic treatment" ~ "Sub-cohort 2",
+  data$agudesa_cat == "BCVA > 20 letters" ~ "Sub-cohort 3"
+)
+
+resp_long <- tibble::tibble(
+  grp = rep(grp_of, 3),
+  timepoint = rep(c("24 hours", "1 week", "4 weeks"), each = length(grp_of)),
+  resp = factor(
+    c(as.character(data$resp_24h), as.character(data$resp_1sem), as.character(data$resp_1month)),
+    levels = c("No", "Yes")
+  )
+) |>
+  dplyr::filter(!is.na(resp)) |>
+  dplyr::mutate(timepoint = factor(timepoint, levels = c("24 hours", "1 week", "4 weeks")))
+
+resp_long |>
+  gtsummary::tbl_strata2(
+    strata = grp,
+    .tbl_fun = ~ .x |>
+      gtsummary::tbl_summary(
+        by = timepoint,
+        include = resp,
+        type = resp ~ "dichotomous",
+        value = resp ~ "Yes",
+        statistic = resp ~ "{p}% ({n}/{N})",
+        label = list(resp = .y),
+        missing = "no"
+      ) |>
+      gtsummary::add_ci(
+        method = list(resp ~ "wilson.no.correct"),
+        pattern = "{stat}, 95% CI {ci}"
+      ) |>
+      gtsummary::modify_footnote(gtsummary::everything() ~ NA),
+    .combine_with = "tbl_stack",
+    .combine_args = list(group_header = NULL)
+  ) |>
+  gtsummary::modify_header(label = "**Sub-cohort**") |>
+  gtsummary::as_gt() |>
+  gt::tab_options(column_labels.font.weight = "bold")
+```
+
+# Figures 2-4 - Longitudinal OCT trajectories by sub-cohort
+
+```{r}
+#| label: oct-setup
+#| label: oct-setup
+visit_labels <- c("Baseline", "24h", "1 week", "4 weeks")
+visit_days   <- c(0, 1, 7, 28)
+names(visit_days) <- visit_labels
+group_levels <- c("Sub-cohort 1 Responder", "Sub-cohort 1 Non-responder", "Sub-cohort 2", "Sub-cohort 3")
+group_colors <- c(
+  "Sub-cohort 1 Responder" = "#2E8B22",
+  "Sub-cohort 1 Non-responder" = "#D62728",
+  "Sub-cohort 2" = "#1F77B4",
+  "Sub-cohort 3" = "#FF7F0E"
+)
+```
+
+## Figura 2 - Grosor macular (OCT-M)
+
+```{r}
+#| label: fig-2-octm-data
+long_octm <- data |>
+  dplyr::mutate(
+    group = dplyr::case_when(
+      agudesa_cat == "BCVA ≤ 20 letters" & tiv == "Fibrinolytic treatment" & resp_24h == "Yes" ~ "Sub-cohort 1 Responder",
+      agudesa_cat == "BCVA ≤ 20 letters" & tiv == "Fibrinolytic treatment" & resp_24h == "No"  ~ "Sub-cohort 1 Non-responder",
+      agudesa_cat == "BCVA ≤ 20 letters" & tiv == "No-fibrinolytic treatment" ~ "Sub-cohort 2",
+      agudesa_cat == "BCVA > 20 letters" ~ "Sub-cohort 3"
+    )
+  ) |>
+  dplyr::filter(!is.na(group)) |>
+  dplyr::select(pacient, group, v_bas_octm, v_24h_octm, v_1set_octm, v_1mes_octm) |>
+  rlang::set_names(c("pacient", "group", visit_labels)) |>
+  tidyr::pivot_longer(cols = -c(pacient, group), names_to = "visit", values_to = "value") |>
+  dplyr::mutate(
+    visit = factor(visit, levels = visit_labels),
+    group = factor(group, levels = group_levels)
+  ) |>
+  dplyr::filter(!is.na(value))
+
+summ_octm <- long_octm |>
+  dplyr::group_by(group, visit) |>
+  dplyr::summarise(median = median(value), lo = min(value), hi = max(value), n = dplyr::n(), .groups = "drop") |>
+  dplyr::mutate(visit_num = visit_days[as.character(visit)])
+```
+
+
+```{r}
+#| label: tbl-fig-2-octm
+long_octm |>
+  tidyr::pivot_wider(id_cols = c(pacient, visit), names_from = group, values_from = value) |>
+  gtsummary::tbl_strata(
+    strata = visit,
+    .tbl_fun = ~ .x |>
+      gtsummary::tbl_summary(
+        include = -pacient,
+        statistic = gtsummary::all_continuous() ~ "{median} [{min}, {max}]",
+        type = everything() ~ "continuous",
+        missing = "no"
+      ) |>
+      gtsummary::add_n(statistic = "{N_nonmiss}", col_label = "**N**") |>
+      gtsummary::modify_header(label ~ "**Sub-cohort**"),
+    .header = "**{strata}**"
+  ) |>
+  gtsummary::modify_caption("**OCT macular (foveal) thickness**")
+```
+
+
+```{r}
+#| label: fig-2-octm
+ggplot2::ggplot(summ_octm, aes(x = visit_num, y = median, group = group, colour = group, fill = group)) +
+  ggplot2::geom_ribbon(aes(ymin = lo, ymax = hi), alpha = 0.15, colour = NA) +
+  ggplot2::geom_line(linewidth = 1) +
+  ggplot2::geom_point(size = 2) +
+  ggplot2::scale_colour_manual(values = group_colors) +
+  ggplot2::scale_fill_manual(values = group_colors) +
+  ggplot2::scale_x_continuous(breaks = visit_days, labels = names(visit_days)) +
+  ggplot2::facet_wrap(~group, ncol = 2) +
+  ggplot2::labs(x = "Time (days)", y = "Thickness (µm)") +
+  ggplot2::theme_bw(base_size = 11) +
+  ggplot2::theme(legend.position = "none", strip.text = ggplot2::element_text(face = "bold"), axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+
+## Figura 3 - Capa de células ganglionares (GCL)
+
+
+```{r}
+#| label: fig-3-octgcl-data
+long_octgcl <- data |>
+  dplyr::mutate(
+    group = dplyr::case_when(
+      agudesa_cat == "BCVA ≤ 20 letters" & tiv == "Fibrinolytic treatment" & resp_24h == "Yes" ~ "Sub-cohort 1 Responder",
+      agudesa_cat == "BCVA ≤ 20 letters" & tiv == "Fibrinolytic treatment" & resp_24h == "No"  ~ "Sub-cohort 1 Non-responder",
+      agudesa_cat == "BCVA ≤ 20 letters" & tiv == "No-fibrinolytic treatment" ~ "Sub-cohort 2",
+      agudesa_cat == "BCVA > 20 letters" ~ "Sub-cohort 3"
+    )
+  ) |>
+  dplyr::filter(!is.na(group)) |>
+  dplyr::select(pacient, group, v_bas_octgcl, v_24h_octgcl, v_1set_octgcl, v_1mes_octgcl) |>
+  rlang::set_names(c("pacient", "group", visit_labels)) |>
+  tidyr::pivot_longer(cols = -c(pacient, group), names_to = "visit", values_to = "value") |>
+  dplyr::mutate(
+    visit = factor(visit, levels = visit_labels),
+    group = factor(group, levels = group_levels)
+  ) |>
+  dplyr::filter(!is.na(value))
+
+summ_octgcl <- long_octgcl |>
+  dplyr::group_by(group, visit) |>
+  dplyr::summarise(median = median(value), lo = min(value), hi = max(value), n = dplyr::n(), .groups = "drop") |>
+  dplyr::mutate(visit_num = visit_days[as.character(visit)])
+```
+
+```{r}
+#| label: tbl-fig-3-octgcl
+long_octgcl |>
+  tidyr::pivot_wider(id_cols = c(pacient, visit), names_from = group, values_from = value) |>
+  gtsummary::tbl_strata(
+    strata = visit,
+    .tbl_fun = ~ .x |>
+      gtsummary::tbl_summary(
+        include = -pacient,
+        statistic = gtsummary::all_continuous() ~ "{median} [{min}, {max}]",
+        type = everything() ~ "continuous",
+        missing = "no"
+      ) |>
+      gtsummary::add_n(statistic = "{N_nonmiss}", col_label = "**N**") |>
+      gtsummary::modify_header(label ~ "**Sub-cohort**"),
+    .header = "**{strata}**"
+  ) |>
+  gtsummary::modify_caption("**Ganglion cell layer (GCL) thickness**")
+```
+
+
+```{r}
+#| label: fig-3-octgcl
+ggplot2::ggplot(summ_octgcl, aes(x = visit_num, y = median, group = group, colour = group, fill = group)) +
+  ggplot2::geom_ribbon(aes(ymin = lo, ymax = hi), alpha = 0.15, colour = NA) +
+  ggplot2::geom_line(linewidth = 1) +
+  ggplot2::geom_point(size = 2) +
+  ggplot2::scale_colour_manual(values = group_colors) +
+  ggplot2::scale_fill_manual(values = group_colors) +
+  ggplot2::scale_x_continuous(breaks = visit_days, labels = names(visit_days)) +
+  ggplot2::facet_wrap(~group, ncol = 2) +
+  ggplot2::labs(x = "Time (days)", y = "Thickness (µm)") +
+  ggplot2::theme_bw(base_size = 11) +
+  ggplot2::theme(legend.position = "none", strip.text = ggplot2::element_text(face = "bold"), axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+
+## Figura 4 - Capa de fibras nerviosas de la retina (RNFL)
+
+```{r}
+#| label: fig-4-octp-data
+long_octp <- data |>
+  dplyr::mutate(
+    group = dplyr::case_when(
+      agudesa_cat == "BCVA ≤ 20 letters" & tiv == "Fibrinolytic treatment" & resp_24h == "Yes" ~ "Sub-cohort 1 Responder",
+      agudesa_cat == "BCVA ≤ 20 letters" & tiv == "Fibrinolytic treatment" & resp_24h == "No"  ~ "Sub-cohort 1 Non-responder",
+      agudesa_cat == "BCVA ≤ 20 letters" & tiv == "No-fibrinolytic treatment" ~ "Sub-cohort 2",
+      agudesa_cat == "BCVA > 20 letters" ~ "Sub-cohort 3"
+    )
+  ) |>
+  dplyr::filter(!is.na(group)) |>
+  dplyr::select(pacient, group, v_bas_octp, v_24h_octp, v_1set_octp, v_1mes_octp) |>
+  rlang::set_names(c("pacient", "group", visit_labels)) |>
+  tidyr::pivot_longer(cols = -c(pacient, group), names_to = "visit", values_to = "value") |>
+  dplyr::mutate(
+    visit = factor(visit, levels = visit_labels),
+    group = factor(group, levels = group_levels)
+  ) |>
+  dplyr::filter(!is.na(value))
+
+summ_octp <- long_octp |>
+  dplyr::group_by(group, visit) |>
+  dplyr::summarise(median = median(value), lo = min(value), hi = max(value), n = dplyr::n(), .groups = "drop") |>
+  dplyr::mutate(visit_num = visit_days[as.character(visit)])
+```
+
+
+```{r}
+#| label: tbl-fig-4-octp
+long_octp |>
+  tidyr::pivot_wider(id_cols = c(pacient, visit), names_from = group, values_from = value) |>
+  gtsummary::tbl_strata(
+    strata = visit,
+    .tbl_fun = ~ .x |>
+      gtsummary::tbl_summary(
+        include = -pacient,
+        statistic = gtsummary::all_continuous() ~ "{median} [{min}, {max}]",
+        type = everything() ~ "continuous",
+        missing = "no"
+      ) |>
+      gtsummary::add_n(statistic = "{N_nonmiss}", col_label = "**N**") |>
+      gtsummary::modify_header(label ~ "**Sub-cohort**"),
+    .header = "**{strata}**"
+  ) |>
+  gtsummary::modify_caption("**Retinal nerve fibre layer (RNFL) thickness**")
+```
+
+
+```{r}
+#| label: fig-4-octp
+ggplot2::ggplot(summ_octp, aes(x = visit_num, y = median, group = group, colour = group, fill = group)) +
+  ggplot2::geom_ribbon(aes(ymin = lo, ymax = hi), alpha = 0.15, colour = NA) +
+  ggplot2::geom_line(linewidth = 1) +
+  ggplot2::geom_point(size = 2) +
+  ggplot2::scale_colour_manual(values = group_colors) +
+  ggplot2::scale_fill_manual(values = group_colors) +
+  ggplot2::scale_x_continuous(breaks = visit_days, labels = names(visit_days)) +
+  ggplot2::facet_wrap(~group, ncol = 2) +
+  ggplot2::labs(x = "Time (days)", y = "Thickness (µm)") +
+  ggplot2::theme_bw(base_size = 11) +
+  ggplot2::theme(legend.position = "none", strip.text = ggplot2::element_text(face = "bold"), axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
